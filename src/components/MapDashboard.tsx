@@ -1,8 +1,31 @@
-import { useState, useEffect } from "react";
-import { MapContainer, TileLayer, CircleMarker, Popup } from "react-leaflet";
-import { Navigation, FileText, ShieldCheck, X, BookOpen } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import {
+  MapContainer,
+  TileLayer,
+  CircleMarker,
+  Popup,
+  Marker,
+  useMap,
+} from "react-leaflet";
+import {
+  Navigation,
+  FileText,
+  ShieldCheck,
+  X,
+  BookOpen,
+  MapPin,
+} from "lucide-react";
 import Papa from "papaparse";
+import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+
+// Custom user-location marker icon
+const USER_ICON = L.divIcon({
+  className: "",
+  html: `<div style="width:20px;height:20px;background:#6366f1;border:3px solid #fff;border-radius:50%;box-shadow:0 0 0 4px rgba(99,102,241,.3),0 2px 8px rgba(0,0,0,.25)"></div>`,
+  iconSize: [20, 20],
+  iconAnchor: [10, 10],
+});
 
 interface ResourcePin {
   id: string;
@@ -27,16 +50,57 @@ interface ResourcePin {
 
 interface MapDashboardProps {
   activeFilters: string[];
+  searchLocation?: { lat: number; lng: number; label: string } | null;
+  onClearSearch?: () => void;
 }
 
 const DC_CENTER: [number, number] = [38.9072, -77.0369];
 const DEFAULT_ZOOM = 12;
+const NEARBY_ZOOM = 14;
+const NEARBY_COUNT = 8;
 
-const FOOD_EDUCATION: Record<string, { title: string; body: string; tip: string }> = {
-  "Supermarket": {
+// --- Haversine distance (miles) ---
+const haversine = (
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): number => {
+  const R = 3958.8;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+// --- Map controller (handles flyTo) ---
+const MapController = ({
+  center,
+  zoom,
+}: {
+  center: [number, number] | null;
+  zoom: number;
+}) => {
+  const map = useMap();
+  useEffect(() => {
+    if (center) map.flyTo(center, zoom, { duration: 1.2 });
+  }, [center, zoom, map]);
+  return null;
+};
+
+// --- Education data ---
+const FOOD_EDUCATION: Record<
+  string,
+  { title: string; body: string; tip: string }
+> = {
+  Supermarket: {
     title: "Supermarket — SNAP Authorized",
     body: "Full-service grocery store accepting EBT/SNAP. You can purchase fresh produce, dairy, meats, bread, cereals, and non-alcoholic beverages. SNAP cannot be used for prepared hot foods, alcohol, tobacco, or household items.",
-    tip: "Look for \"Double Up Food Bucks\" programs that match your SNAP dollars on fresh fruits and vegetables.",
+    tip: 'Look for "Double Up Food Bucks" programs that match your SNAP dollars on fresh fruits and vegetables.',
   },
   "Super Store": {
     title: "Super Store — SNAP Authorized",
@@ -107,6 +171,7 @@ const getEducation = (pin: ResourcePin) => {
   return FOOD_EDUCATION[pin.storeType] || FOOD_DEFAULT;
 };
 
+// --- CSV parsers ---
 const parseSnapCsv = async (): Promise<ResourcePin[]> => {
   const res = await fetch("/DC_Active_SNAP_Retailers_2026.csv");
   const text = await res.text();
@@ -145,17 +210,29 @@ const parseHealthCsv = async (): Promise<ResourcePin[]> => {
       const name = (row["DCGISPrimaryCarePtNAME"] || "Health Center").trim();
       const addr = (row["DCGISPrimaryCarePtADDRESS"] || "").trim();
       const ward = row["DCGISPrimaryCarePtWARD"] || "";
-      const facility = (row["DCGISPrimaryCarePtFACILITY_SETTING"] || "").trim();
+      const facility = (
+        row["DCGISPrimaryCarePtFACILITY_SETTING"] || ""
+      ).trim();
 
       const yes = (val: string | undefined) =>
         (val || "").toLowerCase().includes("yes");
-      const clean = (val: string | undefined) => (val || "").trim() || undefined;
+      const clean = (val: string | undefined) =>
+        (val || "").trim() || undefined;
 
       const tags: string[] = [];
       if (yes(row["DCGISPrimaryCarePtMEDICAID"])) tags.push("Accepts Medicaid");
-      if (yes(row["DCGISPrimaryCarePtWALKIN_UNSCHEDULED"])) tags.push("Walk-ins OK");
+      if (yes(row["DCGISPrimaryCarePtWALKIN_UNSCHEDULED"]))
+        tags.push("Walk-ins OK");
 
-      const days = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"];
+      const days = [
+        "MONDAY",
+        "TUESDAY",
+        "WEDNESDAY",
+        "THURSDAY",
+        "FRIDAY",
+        "SATURDAY",
+        "SUNDAY",
+      ];
       const dayAbbr = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
       const hours = days
         .map((d, idx) => {
@@ -170,7 +247,8 @@ const parseHealthCsv = async (): Promise<ResourcePin[]> => {
       if (yes(row["DCGISPRIMARY_CARE_INFOSPANISH"])) langs.push("Spanish");
       if (yes(row["DCGISPRIMARY_CARE_INFOFRENCH"])) langs.push("French");
       if (yes(row["DCGISPRIMARY_CARE_INFOAMHARIC"])) langs.push("Amharic");
-      if (yes(row["DCGISPRIMARY_CARE_INFOCHINESE_TRADITIONAL"])) langs.push("Chinese");
+      if (yes(row["DCGISPRIMARY_CARE_INFOCHINESE_TRADITIONAL"]))
+        langs.push("Chinese");
       if (yes(row["DCGISPRIMARY_CARE_INFOKOREAN"])) langs.push("Korean");
       if (yes(row["DCGISPRIMARY_CARE_INFOASL"])) langs.push("ASL");
 
@@ -186,7 +264,9 @@ const parseHealthCsv = async (): Promise<ResourcePin[]> => {
         storeType: facility,
         extra: {
           phone: clean(row["DCGISPrimaryCarePtPHONE"]),
-          services: clean(row["DCGISPRIMARY_CARE_INFOMEDICAL_SERVICES_AVAILABLE"]),
+          services: clean(
+            row["DCGISPRIMARY_CARE_INFOMEDICAL_SERVICES_AVAILABLE"]
+          ),
           hours: hours || undefined,
           languages: langs.length > 0 ? langs.join(", ") : undefined,
           insurance: clean(row["DCGISPrimaryCarePtINSURANCE_ACCEPTED"]),
@@ -203,10 +283,12 @@ const MARKER_COLORS = {
   health: "#ef4444",
 };
 
-const MapDashboard = ({ activeFilters }: MapDashboardProps) => {
+// --- Main component ---
+const MapDashboard = ({ activeFilters, searchLocation, onClearSearch }: MapDashboardProps) => {
   const [pins, setPins] = useState<ResourcePin[]>([]);
   const [loading, setLoading] = useState(true);
   const [detailPin, setDetailPin] = useState<ResourcePin | null>(null);
+  const [flyTarget, setFlyTarget] = useState<[number, number] | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -225,10 +307,29 @@ const MapDashboard = ({ activeFilters }: MapDashboardProps) => {
     load();
   }, []);
 
+  useEffect(() => {
+    if (searchLocation) {
+      setFlyTarget([searchLocation.lat, searchLocation.lng]);
+    } else {
+      setFlyTarget(DC_CENTER);
+    }
+  }, [searchLocation]);
+
   const filteredPins =
     activeFilters.length === 0
       ? pins
       : pins.filter((p) => p.tags.some((t) => activeFilters.includes(t)));
+
+  const nearbyPins = useMemo(() => {
+    if (!searchLocation) return [];
+    return [...filteredPins]
+      .map((p) => ({
+        ...p,
+        distance: haversine(searchLocation.lat, searchLocation.lng, p.lat, p.lng),
+      }))
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, NEARBY_COUNT);
+  }, [searchLocation, filteredPins]);
 
   const education = detailPin ? getEducation(detailPin) : null;
 
@@ -256,6 +357,25 @@ const MapDashboard = ({ activeFilters }: MapDashboardProps) => {
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
           attribution='&copy; <a href="https://carto.com/">CARTO</a>'
         />
+
+        <MapController
+          center={flyTarget}
+          zoom={searchLocation ? NEARBY_ZOOM : DEFAULT_ZOOM}
+        />
+
+        {/* User location marker */}
+        {searchLocation && (
+          <Marker
+            position={[searchLocation.lat, searchLocation.lng]}
+            icon={USER_ICON}
+          >
+            <Popup>
+              <p className="text-sm font-semibold text-foreground">
+                {searchLocation.label}
+              </p>
+            </Popup>
+          </Marker>
+        )}
 
         {filteredPins.map((pin) => (
           <CircleMarker
@@ -316,12 +436,78 @@ const MapDashboard = ({ activeFilters }: MapDashboardProps) => {
       </MapContainer>
 
       {/* Pin count badge */}
-      {!loading && (
+      {!loading && !searchLocation && (
         <div className="absolute bottom-4 left-4 z-10 glass rounded-xl px-3 py-2 flex items-center gap-2">
           <ShieldCheck className="w-3.5 h-3.5 text-primary" />
           <span className="text-xs font-medium text-foreground">
             {filteredPins.length} verified resources
           </span>
+        </div>
+      )}
+
+      {/* Nearby resources panel */}
+      {searchLocation && (
+        <div className="absolute bottom-0 left-0 right-0 z-10 max-h-[45%] flex flex-col bg-white/95 backdrop-blur-md border-t border-border/50 rounded-t-2xl shadow-2xl">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
+            <div className="flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-primary" />
+              <div>
+                <p className="text-sm font-display font-semibold text-foreground">
+                  Nearby Resources
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  {searchLocation.label}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={onClearSearch}
+              className="p-1.5 rounded-lg hover:bg-secondary transition-colors"
+            >
+              <X className="w-4 h-4 text-muted-foreground" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            {nearbyPins.map((pin) => (
+              <button
+                key={pin.id}
+                onClick={() => {
+                  setFlyTarget([pin.lat, pin.lng]);
+                  setDetailPin(pin);
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-secondary/60 transition-colors text-left border-b border-border/20 last:border-b-0"
+              >
+                <div
+                  className="w-3 h-3 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: MARKER_COLORS[pin.type] }}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate">
+                    {pin.label}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground truncate">
+                    {pin.address}
+                  </p>
+                </div>
+                <div className="flex-shrink-0 text-right">
+                  <p className="text-xs font-semibold text-primary">
+                    {pin.distance < 0.1
+                      ? `${Math.round(pin.distance * 5280)} ft`
+                      : `${pin.distance.toFixed(1)} mi`}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground capitalize">
+                    {pin.type === "food" ? "Food" : "Health"}
+                  </p>
+                </div>
+              </button>
+            ))}
+            {nearbyPins.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-6">
+                No resources found nearby with current filters.
+              </p>
+            )}
+          </div>
         </div>
       )}
 
@@ -366,38 +552,70 @@ const MapDashboard = ({ activeFilters }: MapDashboardProps) => {
               <div className="space-y-2 pt-2 border-t border-border/50">
                 {detailPin.extra.phone && (
                   <div>
-                    <p className="text-[11px] font-semibold text-foreground">Phone</p>
-                    <a href={`tel:${detailPin.extra.phone}`} className="text-xs text-primary hover:underline">{detailPin.extra.phone}</a>
+                    <p className="text-[11px] font-semibold text-foreground">
+                      Phone
+                    </p>
+                    <a
+                      href={`tel:${detailPin.extra.phone}`}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      {detailPin.extra.phone}
+                    </a>
                   </div>
                 )}
                 {detailPin.extra.services && (
                   <div>
-                    <p className="text-[11px] font-semibold text-foreground">Services</p>
-                    <p className="text-xs text-muted-foreground">{detailPin.extra.services}</p>
+                    <p className="text-[11px] font-semibold text-foreground">
+                      Services
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {detailPin.extra.services}
+                    </p>
                   </div>
                 )}
                 {detailPin.extra.hours && (
                   <div>
-                    <p className="text-[11px] font-semibold text-foreground">Hours</p>
-                    <p className="text-xs text-muted-foreground">{detailPin.extra.hours}</p>
+                    <p className="text-[11px] font-semibold text-foreground">
+                      Hours
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {detailPin.extra.hours}
+                    </p>
                   </div>
                 )}
                 {detailPin.extra.languages && (
                   <div>
-                    <p className="text-[11px] font-semibold text-foreground">Languages</p>
-                    <p className="text-xs text-muted-foreground">{detailPin.extra.languages}</p>
+                    <p className="text-[11px] font-semibold text-foreground">
+                      Languages
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {detailPin.extra.languages}
+                    </p>
                   </div>
                 )}
                 {detailPin.extra.insurance && (
                   <div>
-                    <p className="text-[11px] font-semibold text-foreground">Insurance</p>
-                    <p className="text-xs text-muted-foreground">{detailPin.extra.insurance}</p>
+                    <p className="text-[11px] font-semibold text-foreground">
+                      Insurance
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {detailPin.extra.insurance}
+                    </p>
                   </div>
                 )}
                 {detailPin.extra.webUrl && (
                   <div>
-                    <p className="text-[11px] font-semibold text-foreground">Website</p>
-                    <a href={detailPin.extra.webUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline break-all">{detailPin.extra.webUrl}</a>
+                    <p className="text-[11px] font-semibold text-foreground">
+                      Website
+                    </p>
+                    <a
+                      href={detailPin.extra.webUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-primary hover:underline break-all"
+                    >
+                      {detailPin.extra.webUrl}
+                    </a>
                   </div>
                 )}
               </div>
@@ -410,7 +628,9 @@ const MapDashboard = ({ activeFilters }: MapDashboardProps) => {
               </p>
             </div>
 
-            <p className="text-xs text-muted-foreground">{detailPin.address}</p>
+            <p className="text-xs text-muted-foreground">
+              {detailPin.address}
+            </p>
 
             <div className="flex gap-2 pt-1">
               <a

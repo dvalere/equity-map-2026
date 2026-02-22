@@ -1,8 +1,8 @@
 # EquityMap
 
-**BisonHacks 2026 — Leveraging AI for Truth & Service**
+**AI-Powered Resource Navigation for Washington, D.C.**
 
-EquityMap is an AI-powered geospatial platform that helps Washington, D.C. residents navigate food assistance, healthcare, and community resources. Built during the 11th Annual Howard University Hackathon, the platform addresses the growing "Access Gap" by mapping verified SNAP retailers and primary care facilities across the District, with a focus on underserved communities in Wards 7 and 8.
+EquityMap is a geospatial platform that helps D.C. residents navigate food assistance, healthcare, and community resources. Inspired by the 2026 federal budget changes, the platform addresses the growing "Access Gap" by mapping verified SNAP retailers and primary care facilities across the District.
 
 ## The Problem
 
@@ -15,14 +15,14 @@ EquityMap provides three core layers:
 ### 1. Resource Map (Service Layer)
 An interactive Leaflet.js map displaying **450+ verified resource locations** across all of D.C., loaded from real government datasets:
 - **SNAP Retailers** (green markers) — Supermarkets, grocery stores, farmers' markets, convenience stores, and specialty food shops authorized to accept EBT
-- **Primary Care Facilities** (red markers) — Community health centers, clinics, and FQHCs with real data on services, hours, languages, and insurance accepted
+- **Primary Care Facilities** (red markers) O— Community health centers, clinics, and FQHCs with real data on services, hours, languages, and insurance accepted
 
 Users can filter by **Accepts EBT**, **Accepts Medicaid**, and **Walk-ins OK** to find exactly what they need. Each location includes a **Get Directions** link (Google Maps) and a **Details** panel with educational context and facility-specific information.
 
 ### 2. EquityGuide (Truth Layer)
-An AI-powered chat assistant that helps residents understand policy changes and navigate benefit eligibility. Built with Google's Generative AI API (Gemma 3), EquityGuide:
+An AI-powered chat assistant that helps residents understand policy changes and navigate benefit eligibility. Built with Google's Generative AI API (Gemini 2.5 Flash), EquityGuide:
 - Explains the 80-hour work requirement and qualifying activities
-- Reminds Howard students that Federal Work-Study counts toward SNAP eligibility
+- Reminds students that Federal Work-Study counts toward SNAP eligibility
 - Provides empathetic, factual guidance on SNAP, Medicaid, and local resources
 - Falls back to curated responses if the AI service is unavailable
 
@@ -46,7 +46,7 @@ All data is loaded client-side from static CSVs using PapaParse. Health facility
 | Frontend | React 18, TypeScript, Vite |
 | Styling | Tailwind CSS, shadcn/ui (Radix primitives) |
 | Map | Leaflet.js, react-leaflet, CartoDB Positron tiles |
-| AI | Google Generative AI API (Gemma 3 4B) |
+| AI | Google Generative AI API (Gemini 2.5 Flash) |
 | Data | PapaParse (CSV parsing), static datasets |
 | Icons | Lucide React |
 
@@ -83,11 +83,10 @@ Open localhost:8080 in your browser.
 ```bash
 npm run build
 ```
-## Theme Alignment
+## Mission
 
-**Leveraging AI for Truth & Service:**
-- **Truth** — EquityGuide translates complex federal policy into plain-language guidance, helping residents understand how budget changes affect their benefits
-- **Service** — The resource map connects communities to verified food and healthcare access points, with real facility data (hours, phone, services, languages) pulled directly from government datasets
+- **Transparency** — EquityGuide translates complex federal policy into plain-language guidance, helping residents understand how budget changes affect their benefits
+- **Access** — The resource map connects communities to verified food and healthcare access points, with real facility data (hours, phone, services, languages) pulled directly from government datasets
 
 ## License
 

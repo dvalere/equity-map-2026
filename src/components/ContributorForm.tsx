@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Plus, X, MapPin, Tag, Camera, CheckCircle, Loader2 } from "lucide-react";
+import { useState, useCallback } from "react";
+import { Plus, X, MapPin, Tag, ShieldCheck, CheckCircle, Loader2 } from "lucide-react";
 
 type Step = 1 | 2 | 3 | 4;
 type BenefitType = "food" | "health" | "community";
@@ -7,32 +7,86 @@ type BenefitType = "food" | "health" | "community";
 const BENEFIT_OPTIONS: { value: BenefitType; label: string; emoji: string; color: string }[] = [
   { value: "food", label: "Food / SNAP", emoji: "🍎", color: "bg-pin-food" },
   { value: "health", label: "Healthcare / Medicaid", emoji: "🏥", color: "bg-pin-health" },
-  { value: "community", label: "Community Resource", emoji: "💙", color: "bg-pin-community" },
 ];
 
 const ContributorForm = ({ fabOffset = false }: { fabOffset?: boolean }) => {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>(1);
   const [location, setLocation] = useState("");
+  const [addressValid, setAddressValid] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [addressError, setAddressError] = useState("");
   const [benefitType, setBenefitType] = useState<BenefitType | null>(null);
+  const [captchaPassed, setCaptchaPassed] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [verified, setVerified] = useState(false);
 
   const reset = () => {
     setStep(1);
     setLocation("");
+    setAddressValid(false);
+    setValidating(false);
+    setAddressError("");
     setBenefitType(null);
+    setCaptchaPassed(false);
     setVerifying(false);
     setVerified(false);
   };
 
-  const handleVerify = () => {
+  const validateAddress = useCallback(async () => {
+    const addr = location.trim();
+    if (!addr) return;
+    if (addr.length < 5) {
+      setAddressError("Please enter a full street address (e.g. 1600 Pennsylvania Ave NW).");
+      return;
+    }
+    setValidating(true);
+    setAddressError("");
+    try {
+      const encoded = encodeURIComponent(addr + ", Washington, DC");
+      const resp = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encoded}&limit=1&countrycodes=us&addressdetails=1`
+      );
+      const results = await resp.json();
+      if (!results.length) {
+        setAddressError("We couldn't find that address. Please enter a valid D.C. address.");
+        return;
+      }
+      const r = results[0];
+      const lat = parseFloat(r.lat);
+      const lon = parseFloat(r.lon);
+      const displayName: string = r.display_name || "";
+      const inDC =
+        lat >= 38.79 && lat <= 38.996 && lon >= -77.12 && lon <= -76.91;
+      const nameMatchesDC =
+        displayName.includes("Washington") ||
+        displayName.includes("District of Columbia");
+      const hasStreetInfo =
+        r.address?.road || r.address?.house_number || r.type === "house";
+
+      if (inDC && nameMatchesDC && hasStreetInfo) {
+        setAddressValid(true);
+        setLocation(displayName.split(",").slice(0, 3).join(",").trim());
+        setStep(2);
+      } else if (!inDC || !nameMatchesDC) {
+        setAddressError("That address doesn't appear to be in Washington, D.C.");
+      } else {
+        setAddressError("Please enter a specific street address, not just a city or area name.");
+      }
+    } catch {
+      setAddressError("Validation failed. Check your connection.");
+    } finally {
+      setValidating(false);
+    }
+  }, [location]);
+
+  const handleSubmit = () => {
     setVerifying(true);
     setTimeout(() => {
       setVerifying(false);
       setVerified(true);
       setStep(4);
-    }, 3000);
+    }, 2000);
   };
 
   return (
@@ -41,7 +95,7 @@ const ContributorForm = ({ fabOffset = false }: { fabOffset?: boolean }) => {
       {!open && (
         <button
           onClick={() => { reset(); setOpen(true); }}
-          className={`fixed left-4 z-40 w-14 h-14 rounded-full bg-secondary text-foreground shadow-lg flex items-center justify-center hover:scale-105 transition-all duration-300 border border-border ${fabOffset ? "bottom-52" : "bottom-20"}`}
+          className={`fixed left-4 z-40 w-14 h-14 rounded-full bg-secondary text-foreground shadow-lg flex items-center justify-center hover:scale-105 transition-all duration-300 border border-border ${fabOffset ? "bottom-[48%]" : "bottom-20"}`}
           aria-label="Contribute a resource"
         >
           <Plus className="w-6 h-6" />
@@ -82,16 +136,30 @@ const ContributorForm = ({ fabOffset = false }: { fabOffset?: boolean }) => {
                 </div>
                 <input
                   value={location}
-                  onChange={e => setLocation(e.target.value)}
-                  placeholder="Enter address or landmark..."
+                  onChange={e => {
+                    setLocation(e.target.value);
+                    setAddressValid(false);
+                    setAddressError("");
+                  }}
+                  placeholder="Enter a valid D.C. address..."
                   className="w-full bg-secondary rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                 />
+                {addressError && (
+                  <p className="text-xs text-destructive">{addressError}</p>
+                )}
                 <button
-                  onClick={() => step === 1 && location && setStep(2)}
-                  disabled={!location}
-                  className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:bg-accent transition-colors disabled:opacity-50"
+                  onClick={validateAddress}
+                  disabled={!location.trim() || validating}
+                  className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:bg-accent transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  Next
+                  {validating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Validating address...
+                    </>
+                  ) : (
+                    "Next"
+                  )}
                 </button>
               </div>
             )}
@@ -103,6 +171,12 @@ const ContributorForm = ({ fabOffset = false }: { fabOffset?: boolean }) => {
                   <Tag className="w-4 h-4" />
                   <span className="text-sm font-medium">Step 2: Select Benefit Type</span>
                 </div>
+                {addressValid && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-pin-food/10 border border-pin-food/20">
+                    <CheckCircle className="w-3.5 h-3.5 text-pin-food flex-shrink-0" />
+                    <p className="text-[11px] text-foreground truncate">{location}</p>
+                  </div>
+                )}
                 <div className="space-y-2">
                   {BENEFIT_OPTIONS.map(opt => (
                     <button
@@ -130,23 +204,46 @@ const ContributorForm = ({ fabOffset = false }: { fabOffset?: boolean }) => {
               </div>
             )}
 
-            {/* Step 3: AI Verification */}
+            {/* Step 3: Captcha Verification */}
             {step === 3 && !verifying && !verified && (
               <div className="space-y-4">
                 <div className="flex items-center gap-2 text-muted-foreground">
-                  <Camera className="w-4 h-4" />
-                  <span className="text-sm font-medium">Step 3: AI Verification</span>
+                  <ShieldCheck className="w-4 h-4" />
+                  <span className="text-sm font-medium">Step 3: Verify You're Human</span>
                 </div>
-                <p className="text-xs text-muted-foreground">Upload a photo of the storefront, menu, or receipt to verify this resource with AI.</p>
-                <div className="border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-primary/50 transition-colors">
-                  <Camera className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                  <p className="text-xs text-muted-foreground">Tap to upload photo</p>
-                </div>
-                <button
-                  onClick={handleVerify}
-                  className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:bg-accent transition-colors"
+
+                {/* Placeholder captcha — replace with custom captcha component */}
+                <div
+                  id="captcha-container"
+                  className="border border-border rounded-xl p-4 bg-secondary/30"
                 >
-                  Submit for Verification
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setCaptchaPassed(!captchaPassed)}
+                      className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-colors ${
+                        captchaPassed
+                          ? "bg-primary border-primary"
+                          : "border-muted-foreground hover:border-primary"
+                      }`}
+                    >
+                      {captchaPassed && (
+                        <CheckCircle className="w-4 h-4 text-primary-foreground" />
+                      )}
+                    </button>
+                    <span className="text-sm text-foreground">I'm not a robot</span>
+                    <div className="ml-auto flex flex-col items-center">
+                      <ShieldCheck className="w-6 h-6 text-muted-foreground" />
+                      <span className="text-[8px] text-muted-foreground mt-0.5">CAPTCHA</span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleSubmit}
+                  disabled={!captchaPassed}
+                  className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:bg-accent transition-colors disabled:opacity-50"
+                >
+                  Submit Resource
                 </button>
               </div>
             )}
@@ -162,11 +259,8 @@ const ContributorForm = ({ fabOffset = false }: { fabOffset?: boolean }) => {
                   </div>
                 </div>
                 <div>
-                  <p className="text-sm font-display font-semibold text-foreground">Verifying with AI...</p>
-                  <p className="text-xs text-muted-foreground mt-1">Analyzing image for resource confirmation</p>
-                </div>
-                <div className="h-1 w-48 mx-auto bg-secondary rounded-full overflow-hidden">
-                  <div className="h-full bg-primary rounded-full animate-scan" style={{ width: "40%" }} />
+                  <p className="text-sm font-display font-semibold text-foreground">Submitting resource...</p>
+                  <p className="text-xs text-muted-foreground mt-1">Verifying and adding to the map</p>
                 </div>
               </div>
             )}
@@ -178,7 +272,7 @@ const ContributorForm = ({ fabOffset = false }: { fabOffset?: boolean }) => {
                   <CheckCircle className="w-8 h-8 text-pin-food" />
                 </div>
                 <div>
-                  <p className="text-sm font-display font-semibold text-foreground">Resource Verified!</p>
+                  <p className="text-sm font-display font-semibold text-foreground">Resource Submitted!</p>
                   <p className="text-xs text-muted-foreground mt-1">Your contribution has been added to the map. Thank you for helping your community.</p>
                 </div>
                 <button
