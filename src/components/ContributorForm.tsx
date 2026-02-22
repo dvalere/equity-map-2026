@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { Plus, X, MapPin, Tag, ShieldCheck, CheckCircle, Loader2 } from "lucide-react";
+import RhythmCaptcha from "./RhythmCaptcha";
 
 type Step = 1 | 2 | 3 | 4;
 type BenefitType = "food" | "health" | "community";
@@ -212,30 +213,11 @@ const ContributorForm = ({ fabOffset = false }: { fabOffset?: boolean }) => {
                   <span className="text-sm font-medium">Step 3: Verify You're Human</span>
                 </div>
 
-                {/* Placeholder captcha — replace with custom captcha component */}
                 <div
                   id="captcha-container"
-                  className="border border-border rounded-xl p-4 bg-secondary/30"
+                  className="border border-border rounded-xl bg-secondary/30"
                 >
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => setCaptchaPassed(!captchaPassed)}
-                      className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-colors ${
-                        captchaPassed
-                          ? "bg-primary border-primary"
-                          : "border-muted-foreground hover:border-primary"
-                      }`}
-                    >
-                      {captchaPassed && (
-                        <CheckCircle className="w-4 h-4 text-primary-foreground" />
-                      )}
-                    </button>
-                    <span className="text-sm text-foreground">I'm not a robot</span>
-                    <div className="ml-auto flex flex-col items-center">
-                      <ShieldCheck className="w-6 h-6 text-muted-foreground" />
-                      <span className="text-[8px] text-muted-foreground mt-0.5">CAPTCHA</span>
-                    </div>
-                  </div>
+                  <RhythmCaptcha onResult={(isHuman) => setCaptchaPassed(isHuman)} />
                 </div>
 
                 <button
